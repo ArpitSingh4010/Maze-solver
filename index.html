@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maze Solver</title>
+  <meta name="description" content="An interactive maze solver using recursive backtracking. Watch a glowing ball navigate through a randomly generated maze with adjustable gravity direction." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
+  <style>
+    /* =========================================
+       RETRO TERMINAL THEME
+    ========================================= */
+    :root {
+      --green: #00e676;
+      --green-dim: #00c853;
+      --amber: #ffb300;
+      --red: #ff1744;
+      --blue: #448aff;
+      --teal: #00bfa5;
+      --purple: #d500f9;
+
+      --bg-deep: #080808;
+      --bg-panel: #0f0f0f;
+      --bg-card: #111111;
+      --border: rgba(0,230,118,0.25);
+      --border-glow: rgba(0,230,118,0.5);
+
+      --cell-wall: #020702;
+      --cell-path: #0d1f0d;
+
+      --text-primary: #e8f5e9;
+      --text-secondary: #81c784;
+      --text-muted: #388e3c;
+
+      --accent-purple: #d500f9;
+      --accent-teal: #00bfa5;
+      --accent-green: #00e676;
+      --accent-red: #ff1744;
+      --accent-blue: #448aff;
+      --accent-orange: #ffb300;
+
+      --font-main: 'Share Tech Mono', monospace;
+      --font-mono: 'Share Tech Mono', monospace;
+
+      --cell-size: 36px;
+      --maze-cols: 15;
+      --maze-rows: 15;
+
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.8);
+      --radius-sm: 0px;
+      --radius-md: 0px;
+      --radius-lg: 0px;
+      --radius-xl: 0px;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Share Tech Mono', monospace;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanline overlay */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 9999;
+      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px);
+    }
+    /* CRT vignette */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 9998;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%);
+    }
+
+    /* =========================================
+       STARS BACKGROUND
+    ========================================= */
+    #stars-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.15;
+    }
+
+    /* =========================================
+       LAYOUT
+    ========================================= */
+    .app-wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+    }
+
+    /* =========================================
+       HEADER
+    ========================================= */
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 3px solid var(--green);
+      position: relative;
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 2px solid var(--green);
+      padding: 4px 14px;
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 16px;
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    .header-badge .dot {
+      width: 6px; height: 6px;
+      background: var(--green);
+      animation: pulse-dot 1s step-end infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    .header h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(1rem, 3vw, 1.6rem);
+      line-height: 1.5;
+      color: var(--green);
+      text-shadow:
+        0 0 10px rgba(0,230,118,0.8),
+        0 0 30px rgba(0,230,118,0.4),
+        3px 3px 0 rgba(0,100,50,0.5);
+      margin-bottom: 12px;
+      letter-spacing: 0.05em;
+    }
+
+    .header p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.8;
+      letter-spacing: 0.08em;
+    }
+
+    /* =========================================
+       MAIN CONTENT GRID
+    ========================================= */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* =========================================
+       SIDEBAR
+    ========================================= */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 280px;
+      max-width: 320px;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar { max-width: 100%; }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      padding: 18px;
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .card:hover { border-color: var(--border-glow); }
+
+    .card-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 14px;
+    }
+
+    /* Gravity Status Card */
+    .gravity-card {
+      border-color: rgba(213, 0, 249, 0.4);
+      background: rgba(213, 0, 249, 0.04);
+    }
+
+    .gravity-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .gravity-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.1em;
+    }
+
+    .gravity-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: var(--purple);
+      text-shadow: 0 0 8px rgba(213,0,249,0.6);
+    }
+
+    .gravity-arrow {
+      font-size: 1.4rem;
+      transition: transform 0.3s steps(3);
+      display: inline-block;
+    }
+
+    .gravity-arrow.flipped { transform: scaleY(-1); }
+
+    /* Stats Card */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .stat-item {
+      background: rgba(0,230,118,0.04);
+      border: 2px solid rgba(0,230,118,0.15);
+      padding: 12px 8px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 14px;
+      color: var(--green);
+      text-shadow: 0 0 8px rgba(0,230,118,0.5);
+    }
+
+    .stat-label {
+      font-size: 8px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .stat-item.highlight .stat-value {
+      color: var(--teal);
+      text-shadow: 0 0 8px rgba(0,191,165,0.5);
+    }
+
+    /* Controls Card */
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 14px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      cursor: pointer;
+      border: 3px solid;
+      background: transparent;
+      transition: all 0.1s;
+      white-space: nowrap;
+      user-select: none;
+      letter-spacing: 0.05em;
+    }
+
+    .btn:active { transform: translate(2px, 2px); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; }
+
+    .btn-primary { border-color: var(--green); color: var(--green); }
+    .btn-primary:hover:not(:disabled) { background: var(--green); color: #000; box-shadow: 0 0 12px rgba(0,230,118,0.5); }
+
+    .btn-secondary { border-color: var(--text-muted); color: var(--text-secondary); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--text-secondary); color: var(--text-primary); }
+
+    .btn-teal { border-color: var(--teal); color: var(--teal); }
+    .btn-teal:hover:not(:disabled) { background: var(--teal); color: #000; box-shadow: 0 0 12px rgba(0,191,165,0.4); }
+
+    .btn-danger { border-color: var(--red); color: var(--red); }
+    .btn-danger:hover:not(:disabled) { background: var(--red); color: #fff; }
+
+    .btn-orange { border-color: var(--amber); color: var(--amber); }
+    .btn-orange:hover:not(:disabled) { background: var(--amber); color: #000; }
+
+    .btn-full { grid-column: 1 / -1; }
+
+    /* Speed Control */
+    .speed-control { margin-top: 4px; }
+
+    .speed-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .speed-header span {
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+    }
+
+    .speed-badge {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      color: var(--green);
+      background: rgba(0,230,118,0.1);
+      border: 1px solid rgba(0,230,118,0.3);
+      padding: 3px 7px;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 8px;
+      background: linear-gradient(to right, var(--green) var(--range-pct, 0%), rgba(0,230,118,0.15) var(--range-pct, 0%));
+      border: 1px solid rgba(0,230,118,0.3);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--green);
+      cursor: pointer;
+      border: 2px solid #000;
+      box-shadow: 0 0 8px rgba(0,230,118,0.6);
+    }
+
+    /* =========================================
+       MAZE AREA
+    ========================================= */
+    .maze-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .maze-wrapper {
+      position: relative;
+      background: var(--bg-card);
+      border: 3px solid var(--green);
+      padding: 16px;
+      box-shadow:
+        0 0 0 1px rgba(0,230,118,0.1),
+        inset 0 0 30px rgba(0,0,0,0.5),
+        0 0 40px rgba(0,230,118,0.08);
+    }
+
+    .maze-wrapper.shake {
+      animation: gravity-shake 0.3s steps(3);
+    }
+
+    @keyframes gravity-shake {
+      0% { transform: translate(0, 0); }
+      25% { transform: translate(-4px, 0); }
+      50% { transform: translate(4px, 0); }
+      75% { transform: translate(-2px, 0); }
+      100% { transform: translate(0, 0); }
+    }
+
+    /* Corner gravity indicator */
+    .gravity-indicator {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      z-index: 10;
+    }
+
+    .gi-arrow {
+      font-size: 1.2rem;
+      transition: transform 0.3s steps(3);
+      line-height: 1;
+    }
+
+    .gi-arrow.gravity-up { color: var(--green); text-shadow: 0 0 8px var(--green); transform: rotate(0deg); }
+    .gi-arrow.gravity-down { color: var(--amber); text-shadow: 0 0 8px var(--amber); transform: rotate(180deg); }
+
+    .gi-label {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 6px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* Grid container */
+    #maze-grid {
+      display: grid;
+      grid-template-columns: repeat(var(--maze-cols), var(--cell-size));
+      grid-template-rows: repeat(var(--maze-rows), var(--cell-size));
+      gap: 1px;
+      background: #000;
+      border: 2px solid rgba(0,230,118,0.2);
+      position: relative;
+    }
+
+    .cell {
+      width: var(--cell-size);
+      height: var(--cell-size);
+      transition: background-color 0.12s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cell.wall {
+      background-color: var(--cell-wall);
+      box-shadow: inset 1px 1px 0 rgba(0,0,0,0.8), inset -1px -1px 0 rgba(0,0,0,0.8);
+    }
+
+    .cell.path { background-color: var(--cell-path); }
+
+    .cell.start {
+      background-color: rgba(0,230,118,0.22) !important;
+      box-shadow: inset 0 0 14px rgba(0,230,118,0.35);
+    }
+
+    .cell.end {
+      background-color: rgba(255,23,68,0.22) !important;
+      box-shadow: inset 0 0 14px rgba(255,23,68,0.35);
+    }
+
+    .cell.visited { background-color: rgba(0,191,165,0.32) !important; }
+
+    .cell.backtrack { background-color: rgba(255,179,0,0.15) !important; }
+
+    .cell.backtrack::after {
+      content: '×';
+      font-size: 10px;
+      color: rgba(255,179,0,0.6);
+      pointer-events: none;
+    }
+
+    .cell.solution {
+      background-color: rgba(0,230,118,0.45) !important;
+      box-shadow: inset 0 0 10px rgba(0,230,118,0.4);
+    }
+
+    .cell.solution.animate-in {
+      animation: solution-pop 0.2s steps(2) forwards;
+    }
+
+    @keyframes solution-pop {
+      0% { transform: scale(0.7); }
+      60% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+
+    .cell-marker {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 9px;
+      pointer-events: none;
+    }
+
+    .marker-s { color: var(--green); text-shadow: 0 0 8px rgba(0,230,118,0.8); }
+    .marker-e { color: var(--red); text-shadow: 0 0 8px rgba(255,23,68,0.8); }
+
+    /* THE BALL */
+    #ball {
+      position: absolute;
+      width: calc(var(--cell-size) * 0.6);
+      height: calc(var(--cell-size) * 0.6);
+      border-radius: 3px;
+      background: #fff;
+      box-shadow:
+        0 0 10px rgba(255,255,255,1),
+        0 0 24px rgba(0,230,118,0.9),
+        0 0 50px rgba(0,230,118,0.5);
+      pointer-events: none;
+      z-index: 100;
+      transition: left 0.16s linear, top 0.16s linear;
+      animation: bob-up 1.5s steps(4) infinite;
+    }
+
+    #ball.gravity-down { animation: bob-down 1.5s steps(4) infinite; }
+    #ball.moving { animation: none !important; }
+
+    @keyframes bob-up {
+      0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+      50% { transform: translate(-50%, -50%) translateY(-3px); }
+    }
+
+    @keyframes bob-down {
+      0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+      50% { transform: translate(-50%, -50%) translateY(3px); }
+    }
+
+    #ball.solved {
+      animation: ball-celebrate 0.5s steps(2) infinite alternate !important;
+      border-radius: 50%;
+    }
+
+    @keyframes ball-celebrate {
+      0% {
+        box-shadow: 0 0 8px #fff, 0 0 20px var(--teal), 0 0 50px var(--teal);
+        transform: translate(-50%, -50%) scale(1);
+      }
+      100% {
+        box-shadow: 0 0 16px #fff, 0 0 40px var(--teal), 0 0 100px var(--teal);
+        transform: translate(-50%, -50%) scale(1.2);
+      }
+    }
+
+    /* LOG PANEL */
+    .log-card { width: 100%; }
+
+    .log-container {
+      background: rgba(0,0,0,0.7);
+      border: 2px solid rgba(0,230,118,0.2);
+      padding: 10px;
+      height: 110px;
+      overflow: hidden;
+      position: relative;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .log-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      right: 10px;
+    }
+
+    .log-entry {
+      font-size: 11px;
+      line-height: 1.5;
+      color: rgba(129,199,132,0.65);
+      padding: 2px 8px;
+      border-left: 2px solid transparent;
+    }
+
+    .log-entry:last-child {
+      color: var(--text-primary);
+      background: rgba(0,230,118,0.06);
+      border-left-color: var(--green);
+    }
+
+    .log-entry.type-backtrack { border-left-color: var(--amber) !important; }
+    .log-entry.type-success { color: var(--teal) !important; border-left-color: var(--teal) !important; }
+    .log-entry.type-info { border-left-color: var(--blue) !important; }
+
+    @keyframes log-slide-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* LEGEND */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      letter-spacing: 0.05em;
+    }
+
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+
+    .legend-dot { width: 12px; height: 12px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+
+    .ld-wall { background: var(--cell-wall); }
+    .ld-visited { background: rgba(0,191,165,0.35); }
+    .ld-backtrack { background: rgba(255,179,0,0.25); }
+    .ld-solution { background: rgba(0,230,118,0.45); }
+    .ld-start { background: rgba(0,230,118,0.3); }
+    .ld-end { background: rgba(255,23,68,0.3); }
+
+    /* COMPLETION BANNER */
+    .completion-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(0,191,165,0.06);
+      border: 3px solid var(--teal);
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .completion-banner::before {
+      content: '>>> PATH FOUND <<<';
+      position: absolute;
+      top: -12px; left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-deep);
+      padding: 0 10px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      color: var(--teal);
+      white-space: nowrap;
+    }
+
+    .completion-banner.visible { display: flex; }
+
+    .banner-text {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 10px;
+      color: var(--teal);
+      line-height: 1.8;
+    }
+
+    .banner-text span {
+      display: block;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    /* =========================================
+       SCROLLBAR
+    ========================================= */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-glow); }
+
+    /* =========================================
+       RESPONSIVE
+    ========================================= */
+    @media (max-width: 700px) {
+      :root {
+        --cell-size: 22px;
+      }
+
+      .app-wrapper { padding: 16px 12px 40px; }
+
+      .maze-wrapper { padding: 12px; }
+
+      .header h1 { font-size: 1.8rem; }
+
+      .btn { font-size: 12px; padding: 10px 12px; }
+
+      .sidebar { order: 2; }
+      .maze-area { order: 1; }
+    }
+
+    @media (max-width: 420px) {
+      :root { --cell-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="stars-canvas"></canvas>
+
+<div class="app-wrapper">
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-badge">
+      <span class="dot"></span>
+      Backtracking Algorithm
+    </div>
+    <h1>Maze Solver</h1>
+    <p>Watch a glowing ball navigate through a randomly generated maze using recursive backtracking — with a gravity-flipping twist.</p>
+  </header>
+
+  <!-- COMPLETION BANNER -->
+  <div id="completion-banner" class="completion-banner" role="alert" aria-live="polite">
+    <div>
+      <div class="banner-text">🎉 Path Found!</div>
+      <span id="banner-detail">Maze solved successfully.</span>
+    </div>
+    <button id="btn-new-maze-banner" class="btn btn-teal">New Maze</button>
+  </div>
+
+  <!-- CONTENT GRID -->
+  <div class="content-grid" style="margin-top:16px;">
+    <!-- MAZE AREA -->
+    <div class="maze-area">
+      <div class="maze-wrapper" id="maze-wrapper">
+        <!-- Gravity Indicator -->
+        <div class="gravity-indicator" aria-label="Current gravity direction">
+          <div class="gi-arrow gravity-up" id="gi-arrow">🠕</div>
+          <div class="gi-label" id="gi-label">UP</div>
+        </div>
+
+        <!-- Maze Grid -->
+        <div id="maze-grid" role="grid" aria-label="Maze grid">
+          <div id="ball" aria-label="Ball"></div>
+        </div>
+      </div>
+
+      <!-- Algorithm Log -->
+      <div class="card log-card" style="width:100%">
+        <div class="card-title">Algorithm Log</div>
+        <div class="log-container" role="log" aria-live="polite">
+          <div class="log-messages" id="log-messages">
+            <div class="log-entry type-info">Ready. Press <strong>Solve</strong> or <strong>Step</strong> to begin.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="card" style="width:100%;padding: 16px 20px;">
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot ld-wall"></div>Wall</div>
+          <div class="legend-item"><div class="legend-dot ld-start"></div>Start</div>
+          <div class="legend-item"><div class="legend-dot ld-end"></div>End</div>
+          <div class="legend-item"><div class="legend-dot ld-visited"></div>Visited</div>
+          <div class="legend-item"><div class="legend-dot ld-backtrack"></div>Backtrack</div>
+          <div class="legend-item"><div class="legend-dot ld-solution"></div>Solution</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <!-- Gravity Card -->
+      <div class="card gravity-card">
+        <div class="card-title">Gravity Status</div>
+        <div class="gravity-display">
+          <div class="gravity-label">Direction</div>
+          <div class="gravity-value">
+            <span class="gravity-arrow" id="gravity-arrow-sidebar">🠕</span>
+            <span id="gravity-text">UP</span>
+          </div>
+        </div>
+        <button id="btn-flip-gravity" class="btn btn-primary" style="width:100%;margin-top:14px;" aria-label="Flip gravity direction">
+          ⚡ Flip Gravity
+        </button>
+      </div>
+
+      <!-- Stats Card -->
+      <div class="card">
+        <div class="card-title">Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value" id="stat-steps">0</div>
+            <div class="stat-label">Steps</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-backtracks">0</div>
+            <div class="stat-label">Backtracks</div>
+          </div>
+          <div class="stat-item highlight">
+            <div class="stat-value" id="stat-path">—</div>
+            <div class="stat-label">Path Length</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-time">0.0s</div>
+            <div class="stat-label">Time</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Card -->
+      <div class="card">
+        <div class="card-title">Controls</div>
+        <div class="btn-group">
+          <div class="btn-row">
+            <button id="btn-solve" class="btn btn-primary" aria-label="Auto-solve the maze">▶ Solve</button>
+            <button id="btn-step" class="btn btn-secondary" aria-label="Step through one move">⏭ Step</button>
+          </div>
+          <div class="btn-row">
+            <button id="btn-reset" class="btn btn-secondary" aria-label="Reset ball to start">↺ Reset</button>
+            <button id="btn-new-maze" class="btn btn-teal" aria-label="Generate a new maze">✦ New Maze</button>
+          </div>
+          <button id="btn-pause" class="btn btn-orange btn-full" aria-label="Pause solving" style="display:none;">⏸ Pause</button>
+        </div>
+
+        <div class="speed-control" style="margin-top:18px;">
+          <div class="speed-header">
+            <span>Speed</span>
+            <span class="speed-badge" id="speed-badge">8 steps/s</span>
+          </div>
+          <input type="range" id="speed-slider" min="1" max="20" value="8" aria-label="Animation speed" />
+        </div>
+      </div>
+
+      <!-- Direction Priority -->
+      <div class="card">
+        <div class="card-title">Direction Priority</div>
+        <div id="direction-priority" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Keyboard Shortcuts -->
+  <div style="margin-top:20px;padding:12px 16px;border:1px solid rgba(0,230,118,0.15);background:rgba(0,230,118,0.03);display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:center;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);">
+    <span style="color:var(--green);font-family:'Press Start 2P',monospace;font-size:8px;letter-spacing:0.1em;">HOTKEYS:</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">S</kbd> Solve</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">T</kbd> Step</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">R</kbd> Reset</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">N</kbd> New Maze</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">G</kbd> Flip Gravity</span>
+    <span><kbd style="border:1px solid rgba(0,230,118,0.3);padding:1px 6px;color:var(--green)">P</kbd> Pause</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ==============================
+   STARS BACKGROUND
+============================== */
+(function() {
+  const canvas = document.getElementById('stars-canvas');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  function init() {
+    resize();
+    stars = [];
+    for (let i = 0; i < 120; i++) {
+      stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.5 + 0.2,
+        a: Math.random(),
+        da: (Math.random() - 0.5) * 0.005,
+        speed: Math.random() * 0.15
+      });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+      s.a += s.da;
+      if (s.a <= 0 || s.a >= 1) s.da *= -1;
+      s.y += s.speed;
+      if (s.y > canvas.height) s.y = 0;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, s.a));
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#a78bfa';
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', init);
+  init();
+  draw();
+})();
+
+/* ==============================
+   CORE STATE
+============================== */
+const ROWS = 15;
+const COLS = 15;
+const EMPTY = 0;
+const WALL = 1;
+
+let maze = [];
+let solverGen = null;
+let solveInterval = null;
+let isRunning = false;
+let isPaused = false;
+let gravityUp = true;
+let startTime = null;
+let timerInterval = null;
+
+let stats = { steps: 0, backtracks: 0, pathLength: null, time: 0 };
+let ballPos = { r: 0, c: 0 };
+const START = { r: 0, c: 0 };
+const END = { r: ROWS - 1, c: COLS - 1 };
+
+const logMessages = [];
+const LOG_MAX = 4;
+
+/* ==============================
+   DOM REFS
+============================== */
+const mazeGrid = document.getElementById('maze-grid');
+const ball = document.getElementById('ball');
+const gravityArrowSidebar = document.getElementById('gravity-arrow-sidebar');
+const gravityText = document.getElementById('gravity-text');
+const giArrow = document.getElementById('gi-arrow');
+const giLabel = document.getElementById('gi-label');
+const gravityArrowEl = document.querySelector('.gravity-arrow');
+const mazeWrapper = document.getElementById('maze-wrapper');
+const logMessagesEl = document.getElementById('log-messages');
+const dirPriorityEl = document.getElementById('direction-priority');
+const completionBanner = document.getElementById('completion-banner');
+const bannerDetail = document.getElementById('banner-detail');
+
+const btnSolve = document.getElementById('btn-solve');
+const btnStep = document.getElementById('btn-step');
+const btnReset = document.getElementById('btn-reset');
+const btnNewMaze = document.getElementById('btn-new-maze');
+const btnPause = document.getElementById('btn-pause');
+const btnFlipGravity = document.getElementById('btn-flip-gravity');
+const btnNewMazeBanner = document.getElementById('btn-new-maze-banner');
+const speedSlider = document.getElementById('speed-slider');
+const speedBadge = document.getElementById('speed-badge');
+
+const statSteps = document.getElementById('stat-steps');
+const statBacktracks = document.getElementById('stat-backtracks');
+const statPath = document.getElementById('stat-path');
+const statTime = document.getElementById('stat-time');
+
+/* ==============================
+   CELL REFS CACHE
+============================== */
+let cellEls = [];
+
+/* ==============================
+   MAZE GENERATION (DFS / Recursive Backtracker)
+============================== */
+function generateMaze() {
+  // Start: all walls
+  maze = Array.from({ length: ROWS }, () => Array(COLS).fill(WALL));
+
+  // DFS recursive backtracker
+  function carve(r, c) {
+    maze[r][c] = EMPTY;
+    const dirs = shuffle([[0,2],[2,0],[0,-2],[-2,0]]);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && maze[nr][nc] === WALL) {
+        maze[r + dr/2][c + dc/2] = EMPTY; // carve wall between
+        carve(nr, nc);
+      }
+    }
+  }
+
+  // Start from (0,0), must be on even grid positions for proper maze
+  // Adjust so DFS starts on valid node grid
+  carve(0, 0);
+
+  // Ensure start and end are open
+  maze[START.r][START.c] = EMPTY;
+  maze[END.r][END.c] = EMPTY;
+
+  // Force path accessibility near start and end (if they're odd-indexed)
+  // Make sure neighbors are also accessible
+  if (maze[0][1] === WALL && COLS > 1) maze[0][1] = EMPTY;
+  if (maze[1][0] === WALL && ROWS > 1) maze[1][0] = EMPTY;
+  if (maze[ROWS-1][COLS-2] === WALL) maze[ROWS-1][COLS-2] = EMPTY;
+  if (maze[ROWS-2][COLS-1] === WALL) maze[ROWS-2][COLS-1] = EMPTY;
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* ==============================
+   RENDER MAZE
+============================== */
+function renderMaze() {
+  mazeGrid.innerHTML = '';
+  cellEls = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    cellEls[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell ' + (maze[r][c] === WALL ? 'wall' : 'path');
+      cell.setAttribute('data-r', r);
+      cell.setAttribute('data-c', c);
+      cell.setAttribute('role', 'gridcell');
+
+      if (r === START.r && c === START.c) {
+        cell.classList.add('start');
+        const m = document.createElement('div');
+        m.className = 'cell-marker marker-s';
+        m.textContent = 'S';
+        cell.appendChild(m);
+      }
+
+      if (r === END.r && c === END.c) {
+        cell.classList.add('end');
+        const m = document.createElement('div');
+        m.className = 'cell-marker marker-e';
+        m.textContent = 'E';
+        cell.appendChild(m);
+      }
+
+      mazeGrid.appendChild(cell);
+      cellEls[r][c] = cell;
+    }
+  }
+
+  // Add ball after cells
+  mazeGrid.appendChild(ball);
+  placeBallAt(START.r, START.c, false);
+}
+
+/* ==============================
+   BALL POSITIONING
+============================== */
+function getCellSize() {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 36;
+}
+
+function placeBallAt(r, c, animate = true) {
+  const cs = getCellSize();
+  const gap = 1; // gap between cells
+  const left = c * (cs + gap) + cs / 2;
+  const top = r * (cs + gap) + cs / 2;
+
+  if (!animate) {
+    ball.style.transition = 'none';
+    ball.style.left = left + 'px';
+    ball.style.top = top + 'px';
+    // Force reflow
+    ball.offsetHeight;
+    ball.style.transition = '';
+  } else {
+    ball.classList.add('moving');
+    ball.style.left = left + 'px';
+    ball.style.top = top + 'px';
+    setTimeout(() => ball.classList.remove('moving'), 200);
+  }
+
+  ballPos = { r, c };
+}
+
+/* ==============================
+   DIRECTION PRIORITY UI
+============================== */
+function updateDirectionPriority() {
+  const dirs = getDirections();
+  const labels = { up: '↑ UP', down: '↓ DOWN', left: '← LEFT', right: '→ RIGHT' };
+  const colors = { up: '#00e676', down: '#ffb300', left: '#448aff', right: '#00bfa5' };
+  const dirKeys = dirs.map(([dr, dc]) => {
+    if (dr === -1) return 'up';
+    if (dr === 1) return 'down';
+    if (dc === -1) return 'left';
+    return 'right';
+  });
+
+  dirPriorityEl.innerHTML = '';
+  dirKeys.forEach((key, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = `
+      display:flex;align-items:center;gap:8px;
+      padding:7px 10px;
+      border:1px solid rgba(0,230,118,0.1);
+      background:rgba(0,230,118,0.03);
+      font-size:12px;color:var(--text-primary);
+    `;
+    const firstBadge = i === 0 ? `<span style="margin-left:auto;font-size:7px;color:#00e676;border:1px solid rgba(0,230,118,0.4);padding:2px 5px;font-family:'Press Start 2P',monospace">FIRST</span>` : '';
+    div.innerHTML = `
+      <span style="font-family:'Press Start 2P',monospace;color:var(--text-muted);font-size:8px;min-width:14px">${i+1}.</span>
+      <span style="color:${colors[key]};font-family:'Share Tech Mono',monospace;letter-spacing:0.1em">${labels[key]}</span>
+      ${firstBadge}`;
+    dirPriorityEl.appendChild(div);
+  });
+}
+
+/* ==============================
+   GRAVITY
+============================== */
+function getDirections() {
+  if (gravityUp) {
+    return [[-1,0],[0,-1],[0,1],[1,0]]; // Up, Left, Right, Down
+  } else {
+    return [[1,0],[0,1],[0,-1],[-1,0]]; // Down, Right, Left, Up
+  }
+}
+
+function updateGravityUI() {
+  const text = gravityUp ? 'UP' : 'DOWN';
+  const arrow = gravityUp ? '🠕' : '🠗';
+  gravityText.textContent = text;
+  gravityArrowSidebar.textContent = arrow;
+
+  if (gravityUp) {
+    gravityArrowSidebar.classList.remove('flipped');
+    giArrow.className = 'gi-arrow gravity-up';
+    giArrow.textContent = '🠕';
+    giLabel.textContent = 'UP';
+    ball.classList.remove('gravity-down');
+  } else {
+    gravityArrowSidebar.classList.add('flipped');
+    giArrow.className = 'gi-arrow gravity-down';
+    giArrow.textContent = '🠗';
+    giLabel.textContent = 'DOWN';
+    ball.classList.add('gravity-down');
+  }
+
+  updateDirectionPriority();
+}
+
+function flipGravity() {
+  gravityUp = !gravityUp;
+  updateGravityUI();
+
+  // Shake effect
+  mazeWrapper.classList.remove('shake');
+  requestAnimationFrame(() => {
+    mazeWrapper.classList.add('shake');
+    setTimeout(() => mazeWrapper.classList.remove('shake'), 500);
+  });
+
+  addLog(`Gravity flipped to ${gravityUp ? 'UP' : 'DOWN'}! Direction priority updated.`, 'info');
+
+  // Recreate solver if already partially run
+  if (isRunning) {
+    // let current solve continue (directions fixed at solve start in generator)
+  }
+}
+
+/* ==============================
+   LOG
+============================== */
+function addLog(msg, type = 'default') {
+  logMessages.push({ msg, type });
+  if (logMessages.length > LOG_MAX) logMessages.shift();
+
+  logMessagesEl.innerHTML = '';
+  logMessages.forEach(({ msg, type }) => {
+    const el = document.createElement('div');
+    el.className = 'log-entry type-' + type;
+    el.textContent = msg;
+    logMessagesEl.appendChild(el);
+  });
+}
+
+/* ==============================
+   STATS
+============================== */
+function updateStats() {
+  statSteps.textContent = stats.steps;
+  statBacktracks.textContent = stats.backtracks;
+  statPath.textContent = stats.pathLength !== null ? stats.pathLength : '—';
+}
+
+function startTimer() {
+  startTime = Date.now();
+  statTime.textContent = '0.0s';
+  timerInterval = setInterval(() => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    statTime.textContent = elapsed + 's';
+  }, 100);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (startTime) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    statTime.textContent = elapsed + 's';
+  }
+}
+
+function resetStats() {
+  stats = { steps: 0, backtracks: 0, pathLength: null, time: 0 };
+  updateStats();
+  statTime.textContent = '0.0s';
+  stopTimer();
+  startTime = null;
+}
+
+/* ==============================
+   CELL STYLING HELPERS
+============================== */
+function clearSolverStyles() {
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (!cellEls[r] || !cellEls[r][c]) continue;
+      const cell = cellEls[r][c];
+      cell.classList.remove('visited', 'backtrack', 'solution', 'animate-in');
+    }
+  }
+  ball.classList.remove('solved');
+}
+
+function setCellVisited(r, c) {
+  if (r === START.r && c === START.c) return;
+  if (r === END.r && c === END.c) return;
+  const cell = cellEls[r][c];
+  cell.classList.remove('backtrack');
+  cell.classList.add('visited');
+}
+
+function setCellBacktrack(r, c) {
+  if (r === START.r && c === START.c) return;
+  const cell = cellEls[r][c];
+  cell.classList.remove('visited');
+  cell.classList.add('backtrack');
+}
+
+function showSolutionPath(path) {
+  path.forEach((pos, i) => {
+    setTimeout(() => {
+      const cell = cellEls[pos.r][pos.c];
+      cell.classList.remove('visited', 'backtrack');
+      cell.classList.add('solution');
+      requestAnimationFrame(() => cell.classList.add('animate-in'));
+    }, i * 25);
+  });
+}
+
+/* ==============================
+   BACKTRACKING SOLVER (Generator)
+============================== */
+function* backtrackSolver() {
+  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+  const path = [];
+  const dirs = getDirections(); // captured at solve start; gravity priority baked in
+
+  function* solve(r, c) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
+    if (maze[r][c] === WALL) return false;
+    if (visited[r][c]) return false;
+
+    visited[r][c] = true;
+    path.push({ r, c });
+    stats.steps++;
+
+    // Move ball
+    placeBallAt(r, c, true);
+    setCellVisited(r, c);
+    updateStats();
+
+    if (r === END.r && c === END.c) {
+      yield { type: 'found', path: [...path] };
+      return true;
+    }
+
+    // Try to find what direction we came from for logging
+    const prevPos = path.length >= 2 ? path[path.length - 2] : null;
+    let dirName = '';
+    if (prevPos) {
+      const dr = r - prevPos.r;
+      const dc = c - prevPos.c;
+      if (dr === -1) dirName = 'UP';
+      else if (dr === 1) dirName = 'DOWN';
+      else if (dc === -1) dirName = 'LEFT';
+      else dirName = 'RIGHT';
+    }
+
+    yield { type: 'visit', r, c, dir: dirName };
+
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+      if (maze[nr][nc] === WALL || visited[nr][nc]) continue;
+
+      let dLabel = '';
+      if (dr === -1) dLabel = 'UP';
+      else if (dr === 1) dLabel = 'DOWN';
+      else if (dc === -1) dLabel = 'LEFT';
+      else dLabel = 'RIGHT';
+
+      addLog(`Trying ${dLabel} from (${r},${c})...`);
+      yield { type: 'try', r, c, nr, nc, dir: dLabel };
+
+      const result = yield* solve(nr, nc);
+      if (result) return true;
+    }
+
+    // Dead end — backtrack
+    path.pop();
+    stats.backtracks++;
+    setCellBacktrack(r, c);
+    updateStats();
+
+    if (path.length > 0) {
+      const prev = path[path.length - 1];
+      placeBallAt(prev.r, prev.c, true);
+      addLog(`Dead end! Backtracking to (${prev.r},${prev.c})`, 'backtrack');
+    }
+
+    yield { type: 'backtrack', r, c };
+    return false;
+  }
+
+  yield* solve(START.r, START.c);
+}
+
+/* ==============================
+   SOLVER CONTROLS
+============================== */
+function initSolver() {
+  if (solveInterval) clearInterval(solveInterval);
+  solveInterval = null;
+  solverGen = backtrackSolver();
+  isRunning = false;
+  isPaused = false;
+}
+
+function stepOnce() {
+  if (!solverGen) initSolver();
+
+  const result = solverGen.next();
+
+  if (result.done || (result.value && result.value.type === 'found')) {
+    onSolved(result.value?.path);
+    return false;
+  }
+
+  const val = result.value;
+  if (val) {
+    if (val.type === 'visit' && val.dir) {
+      addLog(`Moved ${val.dir} → (${val.r},${val.c})`);
+    }
+    if (val.type === 'found') {
+      onSolved(val.path);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function startSolving() {
+  if (!solverGen) initSolver();
+
+  isRunning = true;
+  isPaused = false;
+  updateButtonStates();
+  startTimer();
+  addLog('Starting backtracking solver...', 'info');
+
+  const speed = parseInt(speedSlider.value);
+  const delay = Math.round(1000 / speed);
+
+  solveInterval = setInterval(() => {
+    if (isPaused) return;
+
+    // Run multiple steps per tick for higher speeds
+    const stepsPerTick = speed >= 15 ? 3 : 1;
+    for (let i = 0; i < stepsPerTick; i++) {
+      const cont = stepOnce();
+      if (!cont) {
+        clearInterval(solveInterval);
+        solveInterval = null;
+        return;
+      }
+    }
+  }, Math.max(30, delay));
+}
+
+function pauseSolving() {
+  isPaused = !isPaused;
+  btnPause.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+  if (isPaused) stopTimer();
+  else startTimer();
+}
+
+function onSolved(path) {
+  clearInterval(solveInterval);
+  solveInterval = null;
+  isRunning = false;
+  stopTimer();
+  ball.classList.add('solved');
+
+  if (path) {
+    stats.pathLength = path.length;
+    updateStats();
+    showSolutionPath(path);
+    addLog('🎉 Found the exit! Path highlighted in teal.', 'success');
+
+    const elapsed = startTime ? ((Date.now() - startTime) / 1000).toFixed(1) : '?';
+    bannerDetail.textContent = `${path.length} cells in path • ${stats.steps} steps • ${stats.backtracks} backtracks • ${elapsed}s`;
+    completionBanner.classList.add('visible');
+  } else {
+    addLog('No path found — maze is unsolvable!', 'backtrack');
+  }
+
+  solverGen = null;
+  updateButtonStates();
+}
+
+function resetSolver() {
+  clearInterval(solveInterval);
+  solveInterval = null;
+  isRunning = false;
+  isPaused = false;
+  solverGen = null;
+  completionBanner.classList.remove('visible');
+
+  clearSolverStyles();
+  placeBallAt(START.r, START.c, false);
+  resetStats();
+  addLog('Reset. Ready to solve.', 'info');
+  updateButtonStates();
+}
+
+function newMaze() {
+  clearInterval(solveInterval);
+  solveInterval = null;
+  solverGen = null;
+  isRunning = false;
+  isPaused = false;
+  completionBanner.classList.remove('visible');
+
+  generateMaze();
+  renderMaze();
+  resetStats();
+  logMessages.length = 0;
+  addLog('New maze generated! Press Solve or Step.', 'info');
+  updateButtonStates();
+}
+
+/* ==============================
+   BUTTON STATE MANAGEMENT
+============================== */
+function updateButtonStates() {
+  const solved = ball.classList.contains('solved');
+
+  btnSolve.disabled = isRunning || solved;
+  btnStep.disabled = isRunning || solved;
+  btnPause.style.display = isRunning ? 'flex' : 'none';
+  btnReset.disabled = false;
+  btnNewMaze.disabled = false;
+  btnFlipGravity.disabled = false;
+}
+
+/* ==============================
+   SPEED SLIDER
+============================== */
+function updateSpeedSlider() {
+  const val = parseInt(speedSlider.value);
+  speedBadge.textContent = val + ' steps/s';
+  const pct = ((val - 1) / 19 * 100) + '%';
+  speedSlider.style.setProperty('--range-pct', pct);
+
+  // Update live interval if running
+  if (solveInterval) {
+    clearInterval(solveInterval);
+    const delay = Math.round(1000 / val);
+    solveInterval = setInterval(() => {
+      if (isPaused) return;
+      const stepsPerTick = val >= 15 ? 3 : 1;
+      for (let i = 0; i < stepsPerTick; i++) {
+        const cont = stepOnce();
+        if (!cont) {
+          clearInterval(solveInterval);
+          solveInterval = null;
+          return;
+        }
+      }
+    }, Math.max(30, delay));
+  }
+}
+
+/* ==============================
+   EVENT LISTENERS
+============================== */
+btnSolve.addEventListener('click', () => {
+  if (!isRunning) startSolving();
+});
+
+btnStep.addEventListener('click', () => {
+  if (!isRunning && !ball.classList.contains('solved')) {
+    if (!solverGen) {
+      initSolver();
+      startTimer();
+      addLog('Stepping through algorithm...', 'info');
+    }
+    stepOnce();
+    updateStats();
+  }
+});
+
+btnReset.addEventListener('click', resetSolver);
+btnNewMaze.addEventListener('click', newMaze);
+btnNewMazeBanner.addEventListener('click', newMaze);
+btnPause.addEventListener('click', pauseSolving);
+btnFlipGravity.addEventListener('click', flipGravity);
+
+speedSlider.addEventListener('input', updateSpeedSlider);
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key.toLowerCase()) {
+    case ' ':
+    case 's':
+      e.preventDefault();
+      if (!isRunning && !ball.classList.contains('solved')) startSolving();
+      break;
+    case 'arrowright':
+    case 't':
+      e.preventDefault();
+      if (!isRunning && !ball.classList.contains('solved')) btnStep.click();
+      break;
+    case 'r':
+      e.preventDefault();
+      resetSolver();
+      break;
+    case 'n':
+      e.preventDefault();
+      newMaze();
+      break;
+    case 'g':
+      e.preventDefault();
+      flipGravity();
+      break;
+    case 'p':
+      e.preventDefault();
+      if (isRunning) pauseSolving();
+      break;
+  }
+});
+
+/* ==============================
+   INIT
+============================== */
+function init() {
+  updateSpeedSlider();
+  updateGravityUI();
+  generateMaze();
+  renderMaze();
+  addLog('Maze ready! Press Solve or use arrow keys.', 'info');
+  updateButtonStates();
+}
+
+init();
+</script>
+</body>
+</html>
